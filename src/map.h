@@ -5,6 +5,9 @@
  *      Author: mufferm
  */
 
+#include <iostream>
+#include <vector>
+
 #ifndef MAP_H_
 #define MAP_H_
 
