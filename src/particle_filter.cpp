@@ -30,10 +30,10 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
 	particles.clear();
-	// Set number of particles
+	// Set number of particles. This parameter can be tweaked.
 	num_particles = 100;
 
-	// Gaussian distribution for sensory noise
+	// Gaussian distribution for sensory noise for x,y and theta
 	normal_distribution<double> dist_x(x, std[0]);
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
@@ -133,9 +133,67 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
-	for (int i = 0; i < particles.size(); i++){
+	for (unsigned int i = 0; i < particles.size(); i++){
+		
+		// get the ith particle
 		Particle& p = particles[i];
-		vector<La
+
+		//transform observations from local coord to global(map) coordinates
+		vector<LandmarkObs> transformed_observations; 
+		for (unsigned int j = 0; j < observations.size(); j++){
+			LandmarkObs obs_tf;
+			LandmarkObs obs = observations[j];
+
+			obs_tf.id = obs.id;
+			obs_tf.x = p.x + cos(p.theta)*obs.x - sin(p.theta)*obs.y;
+			obs_tf.y = p.y + sin(p.theta)*obs.y - cos(p.theta)*obs.x;
+
+			transformed_observations.push_back(obs_tf);
+		}
+
+		// Convert map_landmarks.landmark_list to vector<LandmarkObs>
+		vector<LandmarkObs> predicted;
+		for (auto& lm_iter : map_landmarks.landmark_list) {
+			LandmarkObs lm;
+
+			lm.id = lm_iter.id_i;
+			lm.x = lm_iter.x_f;
+			lm.y = lm_iter.y_f;
+
+			predicted.push_back(lm);
+		}
+
+		// Associating the observations map coordinates of landmarks
+		dataAssociation(predicted, transformed_observations);
+
+		// Calculate weight of this particle 
+		particles[i].weight = 1.0;
+
+		double std_x = std_landmark[0];
+  	double std_y = std_landmark[1];
+		for (unsigned int j = 0; j < transformed_observations.size(); j++){
+				
+				double obs_x, obs_y, pred_x, pred_y;
+				obs_x = transformed_observations[j].x;
+				obs_y = transformed_observations[j].y;
+				int association_id = transformed_observations[j].id;
+
+				// search for associated landmark with the observation
+				for(unsigned int k = 0; k < predicted.size(); k++){
+					if (predicted[k].id == association_id)
+					{
+						pred_x = predicted[k].x;
+						pred_y = predicted[k].y;
+					}
+				}
+
+				//multivariate Gaussian
+      	double obs_weight = ( 1/(2*M_PI*std_x*std_y)) * exp( -( pow(pred_x-obs_x,2)/(2*pow(std_x, 2)) + (pow(pred_y-obs_y,2)/(2*pow(std_y, 2))) ) );
+
+      	// multiply the observation weights
+      	particles[i].weight *= obs_weight;
+		}		
+
 	}
 
 }
@@ -144,7 +202,24 @@ void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+	
+	vector<Particle> new_particles;
 
+	// access current weights
+	vector<double> weights;
+	for (unsigned int i = 0; i < num_particles; i++){
+		weights.push_back(particles[i].weight);
+	}
+
+	// Sample from discrete distribution
+	discrete_distribution<int> discr_distribution(weights.begin(), weights.end());
+	for (unsigned int i=0; i < particles.size(); i++) {
+		int rnd_ind = discr_distribution(gen);
+		new_particles.push_back(particles[rnd_ind]);
+	}
+
+	// update particles
+	particles = new_particles;
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
